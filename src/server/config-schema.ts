@@ -9,15 +9,7 @@ import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
 export function getConfigSchema(): AdapterConfigSchema {
   return {
     fields: [
-      // Core
-      {
-        key: "model",
-        label: "Model",
-        type: "text",
-        hint: "e.g. anthropic/claude-sonnet-4-6",
-        required: true,
-        group: "core",
-      },
+      // Core (model, promptTemplate, env, extraArgs are provided by the platform)
       {
         key: "provider",
         label: "Provider",
@@ -49,31 +41,10 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "core",
       },
       {
-        key: "promptTemplate",
-        label: "Prompt template",
-        type: "textarea",
-        hint: "Template with {{agent.id}}, {{runId}}, etc.",
-        group: "core",
-      },
-      {
         key: "bootstrapPromptTemplate",
         label: "Bootstrap prompt",
         type: "textarea",
         hint: "First-run prompt template (only used when no existing session)",
-        group: "core",
-      },
-      {
-        key: "extraArgs",
-        label: "Extra CLI args",
-        type: "textarea",
-        hint: "Additional args appended to hermes run command",
-        group: "core",
-      },
-      {
-        key: "env",
-        label: "Environment variables",
-        type: "textarea",
-        hint: "JSON object of KEY=VALUE pairs; overrides inherited Deployment env",
         group: "core",
       },
 
@@ -124,10 +95,31 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "kubernetes",
       },
       {
-        key: "resources",
-        label: "Resources",
-        type: "textarea",
-        hint: "JSON: { requests: { cpu, memory }, limits: { cpu, memory } }",
+        key: "resources.requests.cpu",
+        label: "CPU Request",
+        type: "text",
+        hint: "e.g. '1000m' or '1'",
+        group: "kubernetes",
+      },
+      {
+        key: "resources.requests.memory",
+        label: "Memory Request",
+        type: "text",
+        hint: "e.g. '2Gi' or '2G'",
+        group: "kubernetes",
+      },
+      {
+        key: "resources.limits.cpu",
+        label: "CPU Limit",
+        type: "text",
+        hint: "e.g. '4000m' or '4'",
+        group: "kubernetes",
+      },
+      {
+        key: "resources.limits.memory",
+        label: "Memory Limit",
+        type: "text",
+        hint: "e.g. '8Gi' or '8G'",
         group: "kubernetes",
       },
       {
@@ -165,22 +157,7 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "kubernetes",
       },
 
-      // Operational
-      {
-        key: "timeoutSec",
-        label: "Timeout (sec)",
-        type: "number",
-        default: 0,
-        hint: "0 means no timeout",
-        group: "operational",
-      },
-      {
-        key: "graceSec",
-        label: "Grace period (sec)",
-        type: "number",
-        default: 60,
-        group: "operational",
-      },
+      // Operational (timeoutSec and graceSec are provided by the platform)
     ],
   };
 }

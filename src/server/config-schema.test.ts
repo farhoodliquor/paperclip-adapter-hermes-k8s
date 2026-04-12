@@ -9,30 +9,38 @@ describe("getConfigSchema", () => {
     expect(Array.isArray(schema.fields)).toBe(true);
   });
 
+  it("does not include platform-provided fields", () => {
+    const keys = schema.fields.map((f) => f.key);
+    // These fields are provided by the platform and should not be duplicated
+    expect(keys).not.toContain("model");
+    expect(keys).not.toContain("promptTemplate");
+    expect(keys).not.toContain("env");
+    expect(keys).not.toContain("extraArgs");
+    expect(keys).not.toContain("timeoutSec");
+    expect(keys).not.toContain("graceSec");
+  });
+
   it("includes all expected field keys", () => {
     const keys = schema.fields.map((f) => f.key);
-    expect(keys).toContain("model");
     expect(keys).toContain("provider");
     expect(keys).toContain("variant");
     expect(keys).toContain("dangerouslySkipPermissions");
-    expect(keys).toContain("promptTemplate");
     expect(keys).toContain("bootstrapPromptTemplate");
-    expect(keys).toContain("extraArgs");
-    expect(keys).toContain("env");
     expect(keys).toContain("namespace");
     expect(keys).toContain("image");
     expect(keys).toContain("imagePullPolicy");
     expect(keys).toContain("serviceAccountName");
     expect(keys).toContain("kubeconfig");
     expect(keys).toContain("cwd");
-    expect(keys).toContain("resources");
+    expect(keys).toContain("resources.requests.cpu");
+    expect(keys).toContain("resources.requests.memory");
+    expect(keys).toContain("resources.limits.cpu");
+    expect(keys).toContain("resources.limits.memory");
     expect(keys).toContain("nodeSelector");
     expect(keys).toContain("tolerations");
     expect(keys).toContain("labels");
     expect(keys).toContain("ttlSecondsAfterFinished");
     expect(keys).toContain("retainJobs");
-    expect(keys).toContain("timeoutSec");
-    expect(keys).toContain("graceSec");
   });
 
   it("has a provider field with all expected options", () => {
@@ -64,22 +72,25 @@ describe("getConfigSchema", () => {
     expect(field.default).toBe(true);
   });
 
-  it("has timeoutSec with default 0", () => {
-    const field = schema.fields.find((f) => f.key === "timeoutSec")!;
-    expect(field.type).toBe("number");
-    expect(field.default).toBe(0);
-  });
-
-  it("has graceSec with default 60", () => {
-    const field = schema.fields.find((f) => f.key === "graceSec")!;
-    expect(field.type).toBe("number");
-    expect(field.default).toBe(60);
-  });
-
   it("has ttlSecondsAfterFinished with default 300", () => {
     const field = schema.fields.find((f) => f.key === "ttlSecondsAfterFinished")!;
     expect(field.type).toBe("number");
     expect(field.default).toBe(300);
+  });
+
+  it("has itemized resource fields as text", () => {
+    const resourceKeys = [
+      "resources.requests.cpu",
+      "resources.requests.memory",
+      "resources.limits.cpu",
+      "resources.limits.memory",
+    ];
+    for (const key of resourceKeys) {
+      const field = schema.fields.find((f) => f.key === key);
+      expect(field).toBeDefined();
+      expect(field!.type).toBe("text");
+      expect(field!.group).toBe("kubernetes");
+    }
   });
 
   it("each field has a label", () => {
@@ -113,13 +124,8 @@ describe("getConfigSchema", () => {
     expect(keys.length).toBe(uniqueKeys.size);
   });
 
-  it("marks model as required", () => {
-    const field = schema.fields.find((f) => f.key === "model")!;
-    expect(field.required).toBe(true);
-  });
-
   it("every field has a group", () => {
-    const validGroups = ["core", "kubernetes", "operational"];
+    const validGroups = ["core", "kubernetes"];
     for (const field of schema.fields) {
       expect(validGroups).toContain(field.group);
     }
@@ -127,12 +133,6 @@ describe("getConfigSchema", () => {
 
   it("includes bootstrapPromptTemplate as textarea", () => {
     const field = schema.fields.find((f) => f.key === "bootstrapPromptTemplate")!;
-    expect(field.type).toBe("textarea");
-    expect(field.group).toBe("core");
-  });
-
-  it("includes env as textarea", () => {
-    const field = schema.fields.find((f) => f.key === "env")!;
     expect(field.type).toBe("textarea");
     expect(field.group).toBe("core");
   });
