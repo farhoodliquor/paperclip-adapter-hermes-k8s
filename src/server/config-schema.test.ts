@@ -16,11 +16,15 @@ describe("getConfigSchema", () => {
     expect(keys).toContain("variant");
     expect(keys).toContain("dangerouslySkipPermissions");
     expect(keys).toContain("promptTemplate");
+    expect(keys).toContain("bootstrapPromptTemplate");
     expect(keys).toContain("extraArgs");
+    expect(keys).toContain("env");
     expect(keys).toContain("namespace");
     expect(keys).toContain("image");
     expect(keys).toContain("imagePullPolicy");
+    expect(keys).toContain("serviceAccountName");
     expect(keys).toContain("kubeconfig");
+    expect(keys).toContain("cwd");
     expect(keys).toContain("resources");
     expect(keys).toContain("nodeSelector");
     expect(keys).toContain("tolerations");
@@ -107,5 +111,41 @@ describe("getConfigSchema", () => {
     const keys = schema.fields.map((f) => f.key);
     const uniqueKeys = new Set(keys);
     expect(keys.length).toBe(uniqueKeys.size);
+  });
+
+  it("marks model as required", () => {
+    const field = schema.fields.find((f) => f.key === "model")!;
+    expect(field.required).toBe(true);
+  });
+
+  it("every field has a group", () => {
+    const validGroups = ["core", "kubernetes", "operational"];
+    for (const field of schema.fields) {
+      expect(validGroups).toContain(field.group);
+    }
+  });
+
+  it("includes bootstrapPromptTemplate as textarea", () => {
+    const field = schema.fields.find((f) => f.key === "bootstrapPromptTemplate")!;
+    expect(field.type).toBe("textarea");
+    expect(field.group).toBe("core");
+  });
+
+  it("includes env as textarea", () => {
+    const field = schema.fields.find((f) => f.key === "env")!;
+    expect(field.type).toBe("textarea");
+    expect(field.group).toBe("core");
+  });
+
+  it("includes serviceAccountName as text", () => {
+    const field = schema.fields.find((f) => f.key === "serviceAccountName")!;
+    expect(field.type).toBe("text");
+    expect(field.group).toBe("kubernetes");
+  });
+
+  it("includes cwd as text", () => {
+    const field = schema.fields.find((f) => f.key === "cwd")!;
+    expect(field.type).toBe("text");
+    expect(field.group).toBe("kubernetes");
   });
 });

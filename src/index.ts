@@ -41,6 +41,7 @@ Core fields:
 - variant (string, optional): provider-specific reasoning/profile variant passed as --variant
 - dangerouslySkipPermissions (boolean, optional): inject runtime config with permission.external_directory=allow; defaults to true
 - promptTemplate (string, optional): run prompt template
+- bootstrapPromptTemplate (string, optional): first-run prompt template (only used when no existing session)
 - extraArgs (string[], optional): additional CLI args appended to the hermes command
 - env (object, optional): KEY=VALUE environment variables; overrides inherited vars from the Deployment
 
@@ -48,7 +49,9 @@ Kubernetes fields:
 - namespace (string, optional): namespace for Jobs; defaults to the Deployment namespace
 - image (string, optional): override container image; defaults to the running Deployment image
 - imagePullPolicy (string, optional): image pull policy; default "IfNotPresent"
+- serviceAccountName (string, optional): K8s service account for Job pods; defaults to namespace default
 - kubeconfig (string, optional): absolute path to a kubeconfig file on disk; defaults to in-cluster service account auth
+- cwd (string, optional): override working directory inside the container; defaults to /paperclip
 - resources (object, optional): { requests: { cpu, memory }, limits: { cpu, memory } }
 - nodeSelector (object, optional): node selector for Job pods
 - tolerations (array, optional): tolerations for Job pods
