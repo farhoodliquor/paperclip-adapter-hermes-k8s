@@ -24,7 +24,6 @@ describe("getConfigSchema", () => {
     expect(keys).toContain("provider");
     expect(keys).toContain("variant");
     expect(keys).toContain("dangerouslySkipPermissions");
-    expect(keys).toContain("bootstrapPromptTemplate");
     expect(keys).toContain("namespace");
     expect(keys).toContain("image");
     expect(keys).toContain("imagePullPolicy");
@@ -129,10 +128,9 @@ describe("getConfigSchema", () => {
     }
   });
 
-  it("includes bootstrapPromptTemplate as textarea", () => {
-    const field = schema.fields.find((f) => f.key === "bootstrapPromptTemplate")!;
-    expect(field.type).toBe("textarea");
-    expect(field.group).toBe("core");
+  it("does not surface bootstrapPromptTemplate in the UI schema", () => {
+    const keys = schema.fields.map((f) => f.key);
+    expect(keys).not.toContain("bootstrapPromptTemplate");
   });
 
   it("does not surface serviceAccountName in the UI schema", () => {

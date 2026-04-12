@@ -41,14 +41,6 @@ export function getConfigSchema(): AdapterConfigSchema {
         hint: "Inject runtime config with permission.external_directory=allow",
         group: "core",
       },
-      {
-        key: "bootstrapPromptTemplate",
-        label: "Bootstrap prompt",
-        type: "textarea",
-        hint: "First-run prompt template (only used when no existing session)",
-        group: "core",
-      },
-
       // Kubernetes
       {
         key: "namespace",
