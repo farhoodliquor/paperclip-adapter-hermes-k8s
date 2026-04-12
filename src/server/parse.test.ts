@@ -1,197 +1,118 @@
 import { describe, it, expect } from "vitest";
-import { parseHermesJsonl, isHermesUnknownSessionError } from "./parse.js";
+import { parseHermesText, isHermesUnknownSessionError } from "./parse.js";
 
-describe("parseHermesJsonl", () => {
-  it("parses session_id from step_finish event", () => {
-    const stdout = [
-      '{"type":"step_finish","sessionID":"sess_abc123","part":{"tokens":{"input":100,"output":50}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
+describe("parseHermesText", () => {
+  it("extracts session_id from session info line", () => {
+    const stdout = "session_id: sess_abc123\n";
+    const result = parseHermesText(stdout);
     expect(result.sessionId).toBe("sess_abc123");
-    expect(result.usage.inputTokens).toBe(100);
-    expect(result.usage.outputTokens).toBe(50);
   });
 
-  it("parses sessionId variant", () => {
-    const stdout = [
-      '{"type":"step_finish","sessionId":"sess_xyz","part":{"tokens":{"input":10}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.sessionId).toBe("sess_xyz");
+  it("extracts session_id with underscore format", () => {
+    const stdout = "session_id: sess_abc123\n";
+    const result = parseHermesText(stdout);
+    expect(result.sessionId).toBe("sess_abc123");
   });
 
-  it("accumulates token usage across events", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"tokens":{"input":100,"output":50}}}',
-      '{"type":"step_finish","part":{"tokens":{"input":200,"output":75}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.usage.inputTokens).toBe(300);
-    expect(result.usage.outputTokens).toBe(125);
+  it("extracts assistant messages", () => {
+    const stdout = "  ┊ 💬 Hello, how can I help?\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("Hello, how can I help?");
   });
 
-  it("separates cached input tokens", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"tokens":{"input":500,"cache":{"read":400},"output":100}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.usage.inputTokens).toBe(500);
-    expect(result.usage.cachedInputTokens).toBe(400);
+  it("extracts tool completion lines", () => {
+    const stdout = "  ┊ 💻 $ curl -s https://api.example.com  0.5s\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toContain("curl");
   });
 
-  it("includes reasoning tokens in output", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"tokens":{"input":50,"output":30,"reasoning":70}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.usage.outputTokens).toBe(100); // 30 + 70
-  });
-
-  it("accumulates cost", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"cost":0.05}}',
-      '{"type":"step_finish","part":{"cost":0.03}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.costUsd).toBeCloseTo(0.08);
-  });
-
-  it("extracts summary from text events", () => {
-    const stdout = [
-      '{"type":"text","part":{"text":"Hello world"}}',
-      '{"type":"message","part":{"content":"How can I help?"}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.summary).toBe("Hello world\n\nHow can I help?");
-  });
-
-  it("collects error messages from error events", () => {
-    const stdout = [
-      '{"type":"error","error":{"message":"Something went wrong"}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.errorMessage).toBe("Something went wrong");
-  });
-
-  it("collects error messages from tool_use state errors", () => {
-    const stdout = [
-      '{"type":"tool_use","part":{"state":{"status":"error","error":"Tool failed"}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.errorMessage).toBe("Tool failed");
+  it("collects error lines", () => {
+    const stdout = "Error: something went wrong\n";
+    const result = parseHermesText(stdout);
+    expect(result.errorMessage).toBe("Error: something went wrong");
   });
 
   it("returns null errorMessage when no errors", () => {
-    const stdout = [
-      '{"type":"text","part":{"text":"Hello"}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
+    const stdout = "  ┊ 💬 Hello world\n";
+    const result = parseHermesText(stdout);
     expect(result.errorMessage).toBeNull();
   });
 
-  it("skips empty lines", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"tokens":{"input":10}}}',
-      "",
-      "   ",
-      '{"type":"text","part":{"text":"Done"}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.usage.inputTokens).toBe(10);
+  it("skips [tool] prefix lines", () => {
+    const stdout = "[tool] (｡◕‿◕｡) Searching...\n  ┊ 💬 Done\n";
+    const result = parseHermesText(stdout);
     expect(result.summary).toBe("Done");
   });
 
-  it("handles CRLF line endings", () => {
-    const stdout = '{"type":"text","part":{"text":"Hi"}}\r\n{"type":"text","part":{"text":"There"}}';
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.summary).toBe("Hi\n\nThere");
+  it("skips spinner remnants", () => {
+    const stdout = "💻 Completed\n  ┊ 💬 All done\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("All done");
   });
 
-  it("returns empty summary when no text events", () => {
-    const stdout = [
-      '{"type":"step_finish","part":{"tokens":{"input":10}}}',
-    ].join("\n");
+  it("skips MCP/server noise lines", () => {
+    const stdout = "[2026-03-25T10:40:53.941Z] INFO: Server started\n  ┊ 💬 Ready\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("Ready");
+  });
 
-    const result = parseHermesJsonl(stdout);
+  it("skips system lines except session_id", () => {
+    const stdout = "[hermes] Starting agent...\n  ┊ 💬 Hello\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("Hello");
+  });
 
+  it("skips thinking blocks in summary", () => {
+    const stdout = "💭 Thinking about the problem...\n  ┊ 💬 Here's my answer\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("Here's my answer");
+  });
+
+  it("returns empty summary when no assistant output", () => {
+    const stdout = "[hermes] Starting...\n";
+    const result = parseHermesText(stdout);
     expect(result.summary).toBe("");
   });
 
-  it("handles nested error object with data.message", () => {
-    const stdout = [
-      '{"type":"error","error":{"data":{"message":"Nested error"}}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.errorMessage).toBe("Nested error");
+  it("joins multiple messages with double newlines", () => {
+    const stdout = "  ┊ 💬 First message\n  ┊ 💬 Second message\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("First message\n\nSecond message");
   });
 
-  it("handles error object with code field", () => {
-    const stdout = [
-      '{"type":"error","error":{"code":"RATE_LIMITED"}}',
-    ].join("\n");
-
-    const result = parseHermesJsonl(stdout);
-
-    expect(result.errorMessage).toBe("RATE_LIMITED");
+  it("handles CRLF line endings", () => {
+    const stdout = "  ┊ 💬 Hello\r\n  ┊ 💬 World\r\n";
+    const result = parseHermesText(stdout);
+    expect(result.summary).toBe("Hello\n\nWorld");
   });
 });
 
 describe("isHermesUnknownSessionError", () => {
-  it("detects 'unknown session' phrase", () => {
-    expect(isHermesUnknownSessionError("unknown session foo", "")).toBe(true);
+  it("detects unknown session phrase", () => {
+    expect(isHermesUnknownSessionError("unknown session")).toBe(true);
   });
 
-  it("detects 'session not found' phrase", () => {
-    expect(isHermesUnknownSessionError("", "session not found")).toBe(true);
+  it("detects session not found phrase", () => {
+    expect(isHermesUnknownSessionError("session not found")).toBe(true);
   });
 
-  it("detects session resource not found path", () => {
-    expect(isHermesUnknownSessionError("", "resource not found: /session/abc.json")).toBe(true);
+  it("detects resource not found for session", () => {
+    expect(isHermesUnknownSessionError("resource not found: /session/abc.json")).toBe(true);
   });
 
   it("detects NotFoundError", () => {
-    expect(isHermesUnknownSessionError("NotFoundError", "")).toBe(true);
+    expect(isHermesUnknownSessionError("NotFoundError")).toBe(true);
   });
 
   it("detects no session phrase", () => {
-    expect(isHermesUnknownSessionError("no session available", "")).toBe(true);
+    expect(isHermesUnknownSessionError("no session available")).toBe(true);
   });
 
   it("returns false for clean output", () => {
-    expect(isHermesUnknownSessionError("All good here", "")).toBe(false);
-  });
-
-  it("combines stdout and stderr", () => {
-    expect(isHermesUnknownSessionError("stdout line", "session not found")).toBe(true);
+    expect(isHermesUnknownSessionError("All good here")).toBe(false);
   });
 
   it("is case insensitive", () => {
-    expect(isHermesUnknownSessionError("UNKNOWN SESSION", "")).toBe(true);
+    expect(isHermesUnknownSessionError("UNKNOWN SESSION")).toBe(true);
   });
 });

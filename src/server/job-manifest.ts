@@ -229,8 +229,8 @@ export function buildJobManifest(input: JobBuildInput): JobBuildResult {
     heartbeatPromptChars: renderedPrompt.length,
   };
 
-  // Build hermes CLI args
-  const hermesArgs = ["run", "--format", "json"];
+  // Build hermes CLI args (--quiet for machine-parseable text output)
+  const hermesArgs = ["run", "--quiet"];
   if (runtimeSessionId) hermesArgs.push("--session", runtimeSessionId);
   if (model) hermesArgs.push("--model", model);
   if (provider) hermesArgs.push("--provider", provider);

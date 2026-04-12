@@ -1,99 +1,141 @@
-import { asNumber, asString, parseJson, parseObject } from "@paperclipai/adapter-utils/server-utils";
+/**
+ * Parse Hermes Agent quiet-mode text output.
+ *
+ * Hermes --quiet output patterns:
+ *   Assistant:  "  ┊ 💬 {text}"
+ *   Tool:       "  ┊ {emoji} {verb:9} {detail}  {duration}"
+ *   System:     "[hermes] ..." or "session_id: {id}"
+ *   Thinking:   "💭 ..." or "<thinking>...</thinking>"
+ *   Error:      "Error: ..." or "ERROR: ..." or "Traceback ..."
+ */
 
-function errorText(value: unknown): string {
-  if (typeof value === "string") return value;
-  const rec = parseObject(value);
-  const message = asString(rec.message, "").trim();
-  if (message) return message;
-  const data = parseObject(rec.data);
-  const nestedMessage = asString(data.message, "").trim();
-  if (nestedMessage) return nestedMessage;
-  const name = asString(rec.name, "").trim();
-  if (name) return name;
-  const code = asString(rec.code, "").trim();
-  if (code) return code;
-  try {
-    return JSON.stringify(rec);
-  } catch {
-    return "";
-  }
+const TOOL_OUTPUT_PREFIX = "┊";
+const THINKING_EMOJI = "💭";
+const SESSION_ID_REGEX = /session[_ ]?(?:id|saved)[:\s]+([a-zA-Z0-9_-]+)/i;
+
+function isThinkingLine(line: string): boolean {
+  return (
+    line.includes(THINKING_EMOJI) ||
+    line.startsWith("<thinking>") ||
+    line.startsWith("</thinking>") ||
+    line.startsWith("Thinking:")
+  );
 }
 
-export function parseHermesJsonl(stdout: string) {
+function extractThinkingText(line: string): string {
+  return line.replace(/^[\s┊]*💭\s*/, "").trim();
+}
+
+function isAssistantLine(line: string): boolean {
+  return /^┊\s*💬/.test(line);
+}
+
+function extractAssistantText(line: string): string {
+  return line.replace(/^[\s┊]*💬\s*/, "").trim();
+}
+
+function isToolCompletionLine(line: string): boolean {
+  return line.includes(TOOL_OUTPUT_PREFIX);
+}
+
+/**
+ * Parse a tool completion line to extract structured info.
+ * Format: "┊ {emoji} {verb} {detail}  {duration}"
+ */
+function parseToolLine(line: string): string {
+  const stripped = line
+    .replace(/^\[done\]\s*/, "")
+    .replace(new RegExp(`^${TOOL_OUTPUT_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`), "")
+    .trim();
+  // Strip kaomoji: (｡◕‿◕｡), (★ω★), etc.
+  const cleaned = stripped.replace(/[(][^()]{2,20}[)]\s*/gu, "").trim();
+  // Strip duration at end
+  return cleaned.replace(/[\d.]+s(\s*\(.*\))?\s*$/, "").trim();
+}
+
+function isSystemLine(line: string): boolean {
+  return line.startsWith("[hermes]") || line.startsWith("[paperclip]") || line.startsWith("session_id:");
+}
+
+function isErrorLine(line: string): boolean {
+  return line.startsWith("Error:") || line.startsWith("ERROR:") || line.startsWith("Traceback");
+}
+
+export interface ParsedHermesOutput {
+  sessionId: string | null;
+  summary: string;
+  errorMessage: string | null;
+}
+
+/**
+ * Parse Hermes quiet-mode text output into structured result.
+ */
+export function parseHermesText(stdout: string): ParsedHermesOutput {
   let sessionId: string | null = null;
   const messages: string[] = [];
   const errors: string[] = [];
-  const usage = {
-    inputTokens: 0,
-    cachedInputTokens: 0,
-    outputTokens: 0,
-  };
-  let costUsd = 0;
 
   for (const rawLine of stdout.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line) continue;
 
-    const event = parseJson(line);
-    if (!event) continue;
+    // Session ID extraction
+    const sessionMatch = SESSION_ID_REGEX.exec(line);
+    if (sessionMatch) {
+      sessionId = sessionMatch[1];
+    }
 
-    const currentSessionId = asString(event.sessionID, "").trim() || asString(event.sessionId, "").trim();
-    if (currentSessionId) sessionId = currentSessionId;
+    // Skip non-display lines
+    if (line.startsWith("[tool]")) continue;
+    if (/^\p{Emoji_Presentation}\s*(Completed|Running|Error)?\s*$/u.test(line)) continue;
+    if (/^\[\d{4}-\d{2}-\d{2}T/.test(line)) continue; // MCP/server noise
 
-    const type = asString(event.type, "");
+    // System lines — skip except for session_id (already extracted above)
+    if (isSystemLine(line)) continue;
 
-    if (type === "text" || type === "message") {
-      const part = parseObject(event.part);
-      const text = asString(part.text, "").trim() || asString(part.content, "").trim();
+    // Error lines
+    if (isErrorLine(line)) {
+      errors.push(line);
+      continue;
+    }
+
+    // Thinking blocks — skip for summary (separate from assistant output)
+    if (isThinkingLine(line)) continue;
+
+    // Tool completion lines — extract detail
+    if (isToolCompletionLine(line) && !isAssistantLine(line)) {
+      const detail = parseToolLine(line);
+      if (detail) messages.push(detail);
+      continue;
+    }
+
+    // Assistant messages
+    if (isAssistantLine(line)) {
+      const text = extractAssistantText(line);
       if (text) messages.push(text);
       continue;
     }
 
-    if (type === "step_finish" || type === "turn_complete") {
-      const part = parseObject(event.part);
-      const tokens = parseObject(part.tokens) || parseObject(event.usage);
-      const cache = parseObject(tokens?.cache);
-      usage.inputTokens += asNumber(tokens?.input, 0);
-      usage.cachedInputTokens += asNumber(cache?.read, 0);
-      usage.outputTokens += asNumber(tokens?.output, 0) + asNumber(tokens?.reasoning, 0);
-      costUsd += asNumber(part.cost, 0) || asNumber(event.cost, 0);
-      continue;
-    }
-
-    if (type === "tool_use") {
-      const part = parseObject(event.part);
-      const state = parseObject(part.state);
-      if (asString(state.status, "") === "error") {
-        const text = asString(state.error, "").trim();
-        if (text) errors.push(text);
-      }
-      continue;
-    }
-
-    if (type === "error") {
-      const text = errorText(event.error ?? event.message).trim();
-      if (text) errors.push(text);
-      continue;
-    }
+    // Fallback: any other non-empty line
+    if (line) messages.push(line);
   }
 
   return {
     sessionId,
-    summary: messages.join("\n\n").trim(),
-    usage,
-    costUsd,
+    summary: messages.join("\n\n"),
     errorMessage: errors.length > 0 ? errors.join("\n") : null,
   };
 }
 
-export function isHermesUnknownSessionError(stdout: string, stderr: string): boolean {
-  const haystack = `${stdout}\n${stderr}`
+/**
+ * Detect unknown session errors from Hermes output.
+ */
+export function isHermesUnknownSessionError(stdout: string): boolean {
+  const haystack = stdout
     .split(/\r?\n/)
-    .map((line) => line.trim())
+    .map((l) => l.trim())
     .filter(Boolean)
     .join("\n");
 
-  return /unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found:.*[\\/]session[\\/].*\.json|notfounderror|no session/i.test(
-    haystack,
-  );
+  return /unknown\s+session|session\b.*\bnot\s+found|resource\s+not\s+found.*session|no session|notfounderror/i.test(haystack);
 }

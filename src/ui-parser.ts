@@ -1,13 +1,159 @@
 /**
- * Self-contained stdout parser for Hermes JSONL output.
- * Zero external imports — required by the Paperclip adapter plugin UI parser contract.
+ * Parse Hermes Agent --quiet stdout into TranscriptEntry objects for the Paperclip UI.
+ *
+ * Hermes quiet-mode output patterns:
+ *   Assistant:  "  ┊ 💬 {text}"
+ *   Tool:       "  ┊ {emoji} {verb} {detail}  {duration}"
+ *   System:     "[hermes] ..." or "session_id: {id}"
+ *   Thinking:   "💭 ..." or "<thinking>...</thinking>"
+ *   Error:      "Error: ..." or "ERROR: ..." or "Traceback ..."
+ *
+ * Emits structured tool_call/tool_result pairs so Paperclip renders proper
+ * tool cards (with status icons, expand/collapse) instead of raw stdout blocks.
  */
 
-type TranscriptEntry =
-  | { kind: "stdout"; ts: string; text: string }
-  | { kind: "stderr"; ts: string; text: string }
-  | { kind: "system"; ts: string; text: string };
+import type { TranscriptEntry } from "@paperclipai/adapter-utils";
+
+const TOOL_OUTPUT_PREFIX = "┊";
+const THINKING_EMOJI = "💭";
+
+let toolCallCounter = 0;
+
+function syntheticToolUseId(): string {
+  return `hermes-k8s-tool-${++toolCallCounter}`;
+}
+
+function stripKaomoji(text: string): string {
+  return text.replace(/[(][^()]{2,20}[)]\s*/gu, "").trim();
+}
+
+function isThinkingLine(line: string): boolean {
+  return (
+    line.includes(THINKING_EMOJI) ||
+    line.startsWith("<thinking>") ||
+    line.startsWith("</thinking>") ||
+    line.startsWith("Thinking:")
+  );
+}
+
+function isAssistantLine(line: string): boolean {
+  return /^┊\s*💬/.test(line);
+}
+
+function extractAssistantText(line: string): string {
+  return line.replace(/^[\s┊]*💬\s*/, "").trim();
+}
+
+/**
+ * Parse a tool completion line into structured data.
+ * Format: "┊ {emoji} {verb} {detail}  {duration}"
+ */
+function parseToolLine(
+  line: string,
+): { name: string; detail: string; duration: string; hasError: boolean } | null {
+  let cleaned = line.trim().replace(/^\[done\]\s*/, "");
+  if (!cleaned.startsWith(TOOL_OUTPUT_PREFIX)) return null;
+  cleaned = cleaned.slice(TOOL_OUTPUT_PREFIX.length);
+  cleaned = stripKaomoji(cleaned).trim();
+
+  const durationMatch = cleaned.match(/([\d.]+s)\s*(?:\([\d.]+s\))?\s*$/);
+  const duration = durationMatch ? durationMatch[1] : "";
+  const verbAndDetail = durationMatch
+    ? cleaned.slice(0, cleaned.lastIndexOf(durationMatch[0])).trim()
+    : cleaned;
+  const hasError = /\[(?:exit \d+|error|full)\]/.test(verbAndDetail) ||
+    /\[error\]\s*$/.test(cleaned);
+
+  const parts = verbAndDetail.match(/^(\S+)\s+(.*)/);
+  if (!parts) {
+    return { name: "tool", detail: verbAndDetail, duration, hasError };
+  }
+
+  const verb = parts[1];
+  const detail = parts[2].trim();
+
+  const nameMap: Record<string, string> = {
+    "$": "shell", "exec": "shell", "terminal": "shell",
+    "search": "search", "fetch": "fetch", "crawl": "crawl",
+    "navigate": "browser", "snapshot": "browser", "click": "browser",
+    "type": "browser", "scroll": "browser", "back": "browser",
+    "press": "browser", "close": "browser", "images": "browser",
+    "vision": "browser", "read": "read", "write": "write",
+    "patch": "patch", "grep": "search", "find": "search",
+    "plan": "plan", "recall": "recall", "proc": "process",
+    "delegate": "delegate", "todo": "todo", "memory": "memory",
+    "clarify": "clarify", "session_search": "recall",
+    "code": "execute", "execute": "execute",
+    "web_search": "search", "web_extract": "fetch",
+    "browser_navigate": "browser", "browser_click": "browser",
+    "browser_type": "browser", "browser_snapshot": "browser",
+    "browser_vision": "browser", "browser_scroll": "browser",
+    "browser_press": "browser", "browser_back": "browser",
+    "browser_close": "browser", "browser_get_images": "browser",
+    "read_file": "read", "write_file": "write_file",
+    "search_files": "search", "patch_file": "patch",
+    "execute_code": "execute",
+  };
+
+  const name = nameMap[verb.toLowerCase()] || verb;
+  return { name, detail, duration, hasError };
+}
 
 export function parseStdoutLine(line: string, ts: string): TranscriptEntry[] {
-  return [{ kind: "stdout", ts, text: line }];
+  const trimmed = line.trim();
+  if (!trimmed) return [];
+
+  // System/adapter messages
+  if (trimmed.startsWith("[hermes]") || trimmed.startsWith("[paperclip]")) {
+    return [{ kind: "system", ts, text: trimmed }];
+  }
+
+  // Skip non-display noise lines
+  if (trimmed.startsWith("[tool]")) return [];
+  if (/^\p{Emoji_Presentation}\s*(Completed|Running|Error)?\s*$/u.test(trimmed)) return [];
+  if (/^\[\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+    return [{ kind: "stderr", ts, text: trimmed }];
+  }
+
+  // Session info
+  if (trimmed.startsWith("session_id:")) {
+    return [{ kind: "system", ts, text: trimmed }];
+  }
+
+  // Quiet-mode tool/message lines
+  if (trimmed.includes(TOOL_OUTPUT_PREFIX)) {
+    if (isAssistantLine(trimmed)) {
+      return [{ kind: "assistant", ts, text: extractAssistantText(trimmed) }];
+    }
+
+    const toolInfo = parseToolLine(trimmed);
+    if (toolInfo) {
+      const id = syntheticToolUseId();
+      const detailText = toolInfo.duration
+        ? `${toolInfo.detail}  ${toolInfo.duration}`
+        : toolInfo.detail;
+
+      return [
+        { kind: "tool_call", ts, name: toolInfo.name, input: { detail: toolInfo.detail }, toolUseId: id },
+        { kind: "tool_result", ts, toolUseId: id, content: detailText, isError: toolInfo.hasError },
+      ] as TranscriptEntry[];
+    }
+
+    // Fallback: raw ┊ line
+    const stripped = trimmed.replace(/^\[done\]\s*/, "").replace(new RegExp(`^${TOOL_OUTPUT_PREFIX.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`), "").trim();
+    return [{ kind: "stdout", ts, text: stripped }];
+  }
+
+  // Thinking blocks
+  if (isThinkingLine(trimmed)) {
+    return [{ kind: "thinking", ts, text: trimmed.replace(/^💭\s*/, "") }];
+  }
+
+  // Error output
+  if (trimmed.startsWith("Error:") || trimmed.startsWith("ERROR:") || trimmed.startsWith("Traceback")) {
+    return [{ kind: "stderr", ts, text: trimmed }];
+  }
+
+  // Regular assistant output
+  return [{ kind: "assistant", ts, text: trimmed }];
 }

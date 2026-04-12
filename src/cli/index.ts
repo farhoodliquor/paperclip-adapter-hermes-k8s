@@ -1,1 +1,1 @@
-export { formatEvent, parseStdoutLine } from "./format-event.js";
+export { formatEvent } from "./format-event.js";

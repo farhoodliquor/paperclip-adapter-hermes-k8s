@@ -10,7 +10,7 @@ function inferBillerFromEnv(env: Record<string, string>, _fallback: string | nul
   return null;
 }
 import {
-  parseHermesJsonl,
+  parseHermesText,
   isHermesUnknownSessionError,
 } from "./parse.js";
 import { getSelfPodInfo, getBatchApi, getCoreApi, getLogApi } from "./k8s-client.js";
@@ -377,8 +377,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   }
 
-  // Parse Hermes JSONL output
-  const parsed = parseHermesJsonl(stdout);
+  // Parse Hermes quiet-mode text output
+  const parsed = parseHermesText(stdout);
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
   const fallbackSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
@@ -408,13 +408,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   const biller = inferBillerFromEnv(billerEnv, null) ?? provider ?? "unknown";
 
-  const parsedError = typeof parsed.errorMessage === "string" ? parsed.errorMessage.trim() : "";
+  const parsedError = parsed.errorMessage ?? "";
   const rawExitCode = exitCode;
   const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
   const failed = (synthesizedExitCode ?? 0) !== 0;
 
   // If the session was stale, clear it so the next heartbeat starts fresh
-  if (failed && isHermesUnknownSessionError(stdout, parsedError)) {
+  if (failed && isHermesUnknownSessionError(stdout)) {
     await onLog("stdout", `[paperclip] Hermes session is unavailable; clearing for next run.\n`);
     return {
       exitCode: synthesizedExitCode,
@@ -434,20 +434,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     signal: null,
     timedOut: false,
     errorMessage: (synthesizedExitCode ?? 0) === 0 ? null : fallbackErrorMessage,
-    usage: {
-      inputTokens: parsed.usage.inputTokens,
-      outputTokens: parsed.usage.outputTokens,
-      cachedInputTokens: parsed.usage.cachedInputTokens,
-    },
+    usage: undefined,
     sessionId: resolvedSessionId,
     sessionParams: resolvedSessionParams,
     sessionDisplayId: resolvedSessionId,
     provider,
     model: model || null,
     billingType: "unknown",
-    costUsd: parsed.costUsd,
+    costUsd: undefined,
     resultJson: { stdout },
-    summary: parsed.summary,
+    summary: parsed.summary || null,
     clearSession: false,
   } as AdapterExecutionResult;
 }
