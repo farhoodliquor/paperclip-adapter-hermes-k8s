@@ -75,13 +75,6 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "kubernetes",
       },
       {
-        key: "serviceAccountName",
-        label: "Service account",
-        type: "text",
-        hint: "K8s service account for Job pods; defaults to namespace default",
-        group: "kubernetes",
-      },
-      {
         key: "kubeconfig",
         label: "Kubeconfig path",
         type: "text",

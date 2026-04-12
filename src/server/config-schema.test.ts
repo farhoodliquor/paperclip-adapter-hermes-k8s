@@ -28,7 +28,6 @@ describe("getConfigSchema", () => {
     expect(keys).toContain("namespace");
     expect(keys).toContain("image");
     expect(keys).toContain("imagePullPolicy");
-    expect(keys).toContain("serviceAccountName");
     expect(keys).toContain("kubeconfig");
     expect(keys).toContain("cwd");
     expect(keys).toContain("resources.requests.cpu");
@@ -136,10 +135,9 @@ describe("getConfigSchema", () => {
     expect(field.group).toBe("core");
   });
 
-  it("includes serviceAccountName as text", () => {
-    const field = schema.fields.find((f) => f.key === "serviceAccountName")!;
-    expect(field.type).toBe("text");
-    expect(field.group).toBe("kubernetes");
+  it("does not surface serviceAccountName in the UI schema", () => {
+    const keys = schema.fields.map((f) => f.key);
+    expect(keys).not.toContain("serviceAccountName");
   });
 
   it("includes cwd as text", () => {
