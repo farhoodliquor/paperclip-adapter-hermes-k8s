@@ -14,6 +14,19 @@ export const models = [
   { id: "mistralai/mistral-large-3", label: "Mistral Large 3" },
 ];
 
+import type { CLIAdapterModule } from "@paperclipai/adapter-utils";
+import { formatEvent } from "./cli/format-event.js";
+
+export const cliAdapter: CLIAdapterModule = {
+  type,
+  formatStdoutEvent: (line: string, debug: boolean) => {
+    const formatted = formatEvent(line, debug);
+    if (formatted) {
+      console.log(formatted);
+    }
+  },
+};
+
 export const agentConfigurationDoc = `# hermes_k8s agent configuration
 
 Adapter: hermes_k8s
