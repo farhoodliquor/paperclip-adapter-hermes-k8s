@@ -1,6 +1,6 @@
 {
   "name": "@farhoodliquor/paperclip-adapter-hermes-k8s",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Paperclip adapter plugin that runs Hermes agents as Kubernetes Jobs",
   "license": "MIT",
   "type": "module",
@@ -38,7 +38,7 @@
     "@paperclipai/adapter-utils": ">=0.3.0"
   },
   "devDependencies": {
-    "@paperclipai/adapter-utils": "^0.3.0",
+    "@paperclipai/adapter-utils": "2026.411.0-canary.8",
     "@types/node": "^24.6.0",
     "@vitest/coverage-v8": "^4.1.4",
     "typescript": "^5.7.3",
