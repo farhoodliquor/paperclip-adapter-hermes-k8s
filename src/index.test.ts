@@ -54,16 +54,21 @@ describe("index", () => {
       expect(agentConfigurationDoc).toContain("hermes_k8s");
     });
 
-    it("documents model field", () => {
-      expect(agentConfigurationDoc).toContain("- model");
+    it("documents adapter-specific provider field", () => {
+      expect(agentConfigurationDoc).toContain("- provider");
     });
 
     it("documents namespace field", () => {
       expect(agentConfigurationDoc).toContain("- namespace");
     });
 
-    it("documents timeoutSec field", () => {
-      expect(agentConfigurationDoc).toContain("- timeoutSec");
+    it("lists platform-provided fields that should not be duplicated", () => {
+      expect(agentConfigurationDoc).toContain("model, promptTemplate, extraArgs, env, timeoutSec, graceSec");
+    });
+
+    it("documents itemized resource fields", () => {
+      expect(agentConfigurationDoc).toContain("resources.requests.cpu");
+      expect(agentConfigurationDoc).toContain("resources.limits.memory");
     });
   });
 });

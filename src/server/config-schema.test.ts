@@ -11,7 +11,6 @@ describe("getConfigSchema", () => {
 
   it("does not include platform-provided fields", () => {
     const keys = schema.fields.map((f) => f.key);
-    // These fields are provided by the platform and should not be duplicated
     expect(keys).not.toContain("model");
     expect(keys).not.toContain("promptTemplate");
     expect(keys).not.toContain("env");
@@ -20,7 +19,7 @@ describe("getConfigSchema", () => {
     expect(keys).not.toContain("graceSec");
   });
 
-  it("includes all expected field keys", () => {
+  it("includes all expected adapter-specific field keys", () => {
     const keys = schema.fields.map((f) => f.key);
     expect(keys).toContain("provider");
     expect(keys).toContain("variant");
@@ -78,7 +77,7 @@ describe("getConfigSchema", () => {
     expect(field.default).toBe(300);
   });
 
-  it("has itemized resource fields as text", () => {
+  it("has itemized resource fields as text inputs", () => {
     const resourceKeys = [
       "resources.requests.cpu",
       "resources.requests.memory",

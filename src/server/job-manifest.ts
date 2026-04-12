@@ -174,7 +174,7 @@ export function buildJobManifest(input: JobBuildInput): JobBuildResult {
   const extraArgs = asStringArray(config.extraArgs);
   const timeoutSec = asNumber(config.timeoutSec, 0);
   const ttlSeconds = asNumber(config.ttlSecondsAfterFinished, 300);
-  const resources = parseObject(config.resources);
+  const resourcesLegacy = parseObject(config.resources);
   const nodeSelector = parseObject(config.nodeSelector);
   const tolerations = Array.isArray(config.tolerations) ? config.tolerations : [];
   const extraLabels = parseObject(config.labels);
@@ -243,17 +243,18 @@ export function buildJobManifest(input: JobBuildInput): JobBuildResult {
   // Runtime config for permissions
   const runtimeConfigJson = buildRuntimeConfigJson(config);
 
-  // Resource defaults
-  const resourceRequests = parseObject(resources.requests);
-  const resourceLimits = parseObject(resources.limits);
+  // Resource defaults — read itemized dot-notation keys first, fall back to legacy nested object
+  const legacyRequests = parseObject(resourcesLegacy.requests);
+  const legacyLimits = parseObject(resourcesLegacy.limits);
+  const cfg = config as Record<string, unknown>;
   const containerResources: k8s.V1ResourceRequirements = {
     requests: {
-      cpu: asString(resourceRequests.cpu, "1000m"),
-      memory: asString(resourceRequests.memory, "2Gi"),
+      cpu: asString(cfg["resources.requests.cpu"] ?? legacyRequests.cpu, "1000m"),
+      memory: asString(cfg["resources.requests.memory"] ?? legacyRequests.memory, "2Gi"),
     },
     limits: {
-      cpu: asString(resourceLimits.cpu, "4000m"),
-      memory: asString(resourceLimits.memory, "8Gi"),
+      cpu: asString(cfg["resources.limits.cpu"] ?? legacyLimits.cpu, "4000m"),
+      memory: asString(cfg["resources.limits.memory"] ?? legacyLimits.memory, "8Gi"),
     },
   };
 

@@ -35,15 +35,12 @@ Runs Hermes inside an isolated Kubernetes Job pod instead of the main
 Paperclip process. The Job inherits the container image, imagePullSecrets,
 DNS config, and PVC from the running Paperclip Deployment automatically.
 
-Core fields:
-- model (string, required): Hermes model id in provider/model format (e.g. anthropic/claude-sonnet-4-6)
+Adapter-specific core fields (model, promptTemplate, extraArgs, env,
+timeoutSec, and graceSec are provided by the platform):
 - provider (string, optional): AI provider (anthropic, openai, google, etc.); auto-detected from model if not specified
 - variant (string, optional): provider-specific reasoning/profile variant passed as --variant
 - dangerouslySkipPermissions (boolean, optional): inject runtime config with permission.external_directory=allow; defaults to true
-- promptTemplate (string, optional): run prompt template
 - bootstrapPromptTemplate (string, optional): first-run prompt template (only used when no existing session)
-- extraArgs (string[], optional): additional CLI args appended to the hermes command
-- env (object, optional): KEY=VALUE environment variables; overrides inherited vars from the Deployment
 
 Kubernetes fields:
 - namespace (string, optional): namespace for Jobs; defaults to the Deployment namespace
@@ -52,16 +49,18 @@ Kubernetes fields:
 - serviceAccountName (string, optional): K8s service account for Job pods; defaults to namespace default
 - kubeconfig (string, optional): absolute path to a kubeconfig file on disk; defaults to in-cluster service account auth
 - cwd (string, optional): override working directory inside the container; defaults to /paperclip
-- resources (object, optional): { requests: { cpu, memory }, limits: { cpu, memory } }
+- resources.requests.cpu (string, optional): CPU request (e.g. 500m, 1)
+- resources.requests.memory (string, optional): memory request (e.g. 512Mi, 1Gi)
+- resources.limits.cpu (string, optional): CPU limit (e.g. 2, 4)
+- resources.limits.memory (string, optional): memory limit (e.g. 2Gi, 4Gi)
 - nodeSelector (object, optional): node selector for Job pods
 - tolerations (array, optional): tolerations for Job pods
 - labels (object, optional): extra labels added to Job metadata
 - ttlSecondsAfterFinished (number, optional): auto-cleanup delay; default 300
 - retainJobs (boolean, optional): skip cleanup on completion for debugging
 
-Operational fields:
-- timeoutSec (number, optional): run timeout in seconds; 0 means no timeout
-- graceSec (number, optional): additional grace before adapter gives up after Job deadline
+Platform-provided fields (do not duplicate in adapter config):
+- model, promptTemplate, extraArgs, env, timeoutSec, graceSec
 
 Inherited from Deployment (no config needed):
 - ANTHROPIC_API_KEY, OPENAI_API_KEY, and other provider keys

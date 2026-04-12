@@ -9,7 +9,8 @@ import type { AdapterConfigSchema } from "@paperclipai/adapter-utils";
 export function getConfigSchema(): AdapterConfigSchema {
   return {
     fields: [
-      // Core (model, promptTemplate, env, extraArgs are provided by the platform)
+      // Core (adapter-specific only; model, promptTemplate, extraArgs, env,
+      // timeoutSec, graceSec are provided by the platform)
       {
         key: "provider",
         label: "Provider",
@@ -96,30 +97,30 @@ export function getConfigSchema(): AdapterConfigSchema {
       },
       {
         key: "resources.requests.cpu",
-        label: "CPU Request",
+        label: "CPU request",
         type: "text",
-        hint: "e.g. '1000m' or '1'",
+        hint: "e.g. 500m, 1",
         group: "kubernetes",
       },
       {
         key: "resources.requests.memory",
-        label: "Memory Request",
+        label: "Memory request",
         type: "text",
-        hint: "e.g. '2Gi' or '2G'",
+        hint: "e.g. 512Mi, 1Gi",
         group: "kubernetes",
       },
       {
         key: "resources.limits.cpu",
-        label: "CPU Limit",
+        label: "CPU limit",
         type: "text",
-        hint: "e.g. '4000m' or '4'",
+        hint: "e.g. 2, 4",
         group: "kubernetes",
       },
       {
         key: "resources.limits.memory",
-        label: "Memory Limit",
+        label: "Memory limit",
         type: "text",
-        hint: "e.g. '8Gi' or '8G'",
+        hint: "e.g. 2Gi, 4Gi",
         group: "kubernetes",
       },
       {
@@ -156,8 +157,6 @@ export function getConfigSchema(): AdapterConfigSchema {
         type: "toggle",
         group: "kubernetes",
       },
-
-      // Operational (timeoutSec and graceSec are provided by the platform)
     ],
   };
 }
