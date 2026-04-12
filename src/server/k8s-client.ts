@@ -101,7 +101,7 @@ export async function getSelfPodInfo(kubeconfigPath?: string): Promise<SelfPodIn
 
   const hostname = process.env.HOSTNAME;
   if (!hostname) {
-    throw new Error("heremes_k8s: HOSTNAME env var not set — cannot introspect running pod");
+    throw new Error("hermes_k8s: HOSTNAME env var not set — cannot introspect running pod");
   }
 
   const namespace = readInClusterNamespace();
@@ -110,12 +110,12 @@ export async function getSelfPodInfo(kubeconfigPath?: string): Promise<SelfPodIn
 
   const spec = pod.spec;
   if (!spec) {
-    throw new Error(`heremes_k8s: pod ${hostname} has no spec`);
+    throw new Error(`hermes_k8s: pod ${hostname} has no spec`);
   }
 
   const mainContainer = spec.containers[0];
   if (!mainContainer?.image) {
-    throw new Error(`heremes_k8s: pod ${hostname} has no container image`);
+    throw new Error(`hermes_k8s: pod ${hostname} has no container image`);
   }
 
   // Find PVC claim name from volumes mounted at /paperclip

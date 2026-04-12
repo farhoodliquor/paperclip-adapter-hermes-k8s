@@ -1,4 +1,4 @@
-export const type = "heremes_k8s";
+export const type = "hermes_k8s";
 export const label = "Hermes (Kubernetes)";
 
 export const models = [
@@ -14,9 +14,9 @@ export const models = [
   { id: "mistralai/mistral-large-3", label: "Mistral Large 3" },
 ];
 
-export const agentConfigurationDoc = `# heremes_k8s agent configuration
+export const agentConfigurationDoc = `# hermes_k8s agent configuration
 
-Adapter: heremes_k8s
+Adapter: hermes_k8s
 
 Runs Hermes inside an isolated Kubernetes Job pod instead of the main
 Paperclip process. The Job inherits the container image, imagePullSecrets,

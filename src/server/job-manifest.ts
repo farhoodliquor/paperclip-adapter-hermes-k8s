@@ -264,7 +264,7 @@ export function buildJobManifest(input: JobBuildInput): JobBuildResult {
     "paperclip.io/agent-id": agent.id,
     "paperclip.io/run-id": runId,
     "paperclip.io/company-id": agent.companyId,
-    "paperclip.io/adapter-type": "heremes_k8s",
+    "paperclip.io/adapter-type": "hermes_k8s",
   };
   for (const [key, value] of Object.entries(extraLabels)) {
     if (typeof value === "string") labels[key] = value;
@@ -328,7 +328,7 @@ export function buildJobManifest(input: JobBuildInput): JobBuildResult {
       namespace,
       labels,
       annotations: {
-        "paperclip.io/adapter-type": "heremes_k8s",
+        "paperclip.io/adapter-type": "hermes_k8s",
         "paperclip.io/agent-name": agent.name,
       },
     },

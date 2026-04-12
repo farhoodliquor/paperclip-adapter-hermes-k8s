@@ -252,7 +252,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const batchApi = getBatchApi(kubeconfigPath);
     const existing = await batchApi.listNamespacedJob({
       namespace: guardNamespace,
-      labelSelector: `paperclip.io/agent-id=${agentId},paperclip.io/adapter-type=heremes_k8s`,
+      labelSelector: `paperclip.io/agent-id=${agentId},paperclip.io/adapter-type=hermes_k8s`,
     });
     const running = existing.items.filter(
       (j) => !j.status?.conditions?.some((c) => (c.type === "Complete" || c.type === "Failed") && c.status === "True"),
@@ -279,7 +279,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   if (onMeta) {
     await onMeta({
-      adapterType: "heremes_k8s",
+      adapterType: "hermes_k8s",
       command: `kubectl job/${jobName}`,
       cwd: namespace,
       commandArgs: hermesArgs,

@@ -1,4 +1,4 @@
-# @farhoodliquor/paperclip-adapter-heremes-k8s
+# @farhoodliquor/paperclip-adapter-hermes-k8s
 
 Paperclip adapter plugin that runs Hermes agents as isolated Kubernetes Jobs instead of inside the main Paperclip process.
 
@@ -19,7 +19,7 @@ Paperclip adapter plugin that runs Hermes agents as isolated Kubernetes Jobs ins
 ```bash
 curl -X POST http://localhost:3100/api/adapters \
   -H "Content-Type: application/json" \
-  -d '{"packageName": "@farhoodliquor/paperclip-adapter-heremes-k8s"}'
+  -d '{"packageName": "@farhoodliquor/paperclip-adapter-hermes-k8s"}'
 ```
 
 ### Local Development
@@ -27,7 +27,7 @@ curl -X POST http://localhost:3100/api/adapters \
 ```bash
 curl -X POST http://localhost:3100/api/adapters \
   -H "Content-Type: application/json" \
-  -d '{"localPath": "/path/to/paperclip-adapter-heremes-k8s"}'
+  -d '{"localPath": "/path/to/paperclip-adapter-hermes-k8s"}'
 ```
 
 ## Configuration
