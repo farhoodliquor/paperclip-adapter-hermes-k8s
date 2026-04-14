@@ -87,6 +87,7 @@ async function checkRbac(
     { resource: "jobs", group: "batch", verb: "get", code: "k8s_rbac_job_get", label: "get Jobs" },
     { resource: "pods", group: "", verb: "list", code: "k8s_rbac_pod_list", label: "list Pods" },
     { resource: "pods/log", group: "", verb: "get", code: "k8s_rbac_pod_log", label: "get Pod logs" },
+    { resource: "resourcequotas", group: "", verb: "list", code: "k8s_rbac_quota_list", label: "list ResourceQuotas" },
   ];
 
   for (const check of rbacChecks) {

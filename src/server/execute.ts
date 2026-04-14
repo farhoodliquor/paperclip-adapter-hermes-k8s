@@ -1,6 +1,8 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
 import { asString, asNumber, asBoolean, parseObject } from "@paperclipai/adapter-utils/server-utils";
 
+import type { AdapterBillingType } from "@paperclipai/adapter-utils";
+
 function inferBillerFromEnv(env: Record<string, string>, _fallback: string | null): string | null {
   if (env.OPENROUTER_API_KEY) return "openrouter";
   if (env.OPENAI_BASE_URL?.includes("openrouter")) return "openrouter";
@@ -8,6 +10,14 @@ function inferBillerFromEnv(env: Record<string, string>, _fallback: string | nul
   if (env.ANTHROPIC_API_KEY) return "anthropic";
   if (env.GOOGLE_GENERATIVE_AI_API_KEY) return "google";
   return null;
+}
+
+const API_BILLERS = new Set(["anthropic", "openai", "google", "openrouter"]);
+
+function inferBillingType(biller: string): AdapterBillingType {
+  if (API_BILLERS.has(biller)) return "api";
+  if (biller === "bedrock" || biller === "vertex") return "metered_api";
+  return "unknown";
 }
 import {
   parseHermesText,
@@ -407,6 +417,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (val) billerEnv[key] = val;
   }
   const biller = inferBillerFromEnv(billerEnv, null) ?? provider ?? "unknown";
+  const billingType = inferBillingType(biller);
 
   const parsedError = parsed.errorMessage ?? "";
   const rawExitCode = exitCode;
@@ -440,7 +451,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     sessionDisplayId: resolvedSessionId,
     provider,
     model: model || null,
-    billingType: "unknown",
+    biller,
+    billingType,
     costUsd: undefined,
     resultJson: { stdout },
     summary: parsed.summary || null,
