@@ -53,38 +53,6 @@ async function waitForGatewayHealth(
   throw new Error(`Timed out waiting for gateway to become healthy (${Math.round(timeoutMs / 1000)}s)`);
 }
 
-async function createSecret(
-  namespace: string,
-  name: string,
-  apiKey: string,
-  kubeconfigPath?: string,
-): Promise<void> {
-  const coreApi = getCoreApi(kubeconfigPath);
-  await coreApi.createNamespacedSecret({
-    namespace,
-    body: {
-      apiVersion: "v1",
-      kind: "Secret",
-      metadata: { name, namespace },
-      type: "Opaque",
-      stringData: { "api-key": apiKey },
-    },
-  });
-}
-
-async function deleteSecret(
-  namespace: string,
-  name: string,
-  kubeconfigPath?: string,
-): Promise<void> {
-  const coreApi = getCoreApi(kubeconfigPath);
-  try {
-    await coreApi.deleteNamespacedSecret({ name, namespace });
-  } catch (err) {
-    // Ignore not-found
-  }
-}
-
 async function deleteDeployment(
   namespace: string,
   name: string,
@@ -159,8 +127,6 @@ export async function ensureGateway(
 
   // Generate a new API key for this gateway
   const apiKey = generateApiKey();
-  const agentSlug = sanitizeForK8sName(agentId);
-  const secretName = `hermes-gateway-${agentSlug}-auth`;
 
   const { deployment, service, deploymentName, serviceName, namespace } = buildGatewayManifest({
     ctx,
@@ -170,8 +136,7 @@ export async function ensureGateway(
 
   const baseUrl = `http://${serviceName}.${namespace}:8642`;
 
-  // Create Secret, Service, Deployment
-  await createSecret(namespace, secretName, apiKey, kubeconfigPath);
+  // Recreate Service and Deployment (delete old ones first to ensure fresh start)
   await deleteService(namespace, serviceName, kubeconfigPath);
   await deleteDeployment(namespace, deploymentName, kubeconfigPath);
 
@@ -200,12 +165,10 @@ export async function deleteGateway(
   const agentSlug = sanitizeForK8sName(agentId);
   const deploymentName = `hermes-gateway-${agentSlug}`;
   const serviceName = `hermes-gateway-${agentSlug}`;
-  const secretName = `hermes-gateway-${agentSlug}-auth`;
 
   await Promise.all([
     deleteDeployment(namespace, deploymentName, kubeconfigPath),
     deleteService(namespace, serviceName, kubeconfigPath),
-    deleteSecret(namespace, secretName, kubeconfigPath),
   ]);
 
   gatewayCache.delete(agentId);
