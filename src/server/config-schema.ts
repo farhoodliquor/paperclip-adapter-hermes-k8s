@@ -27,6 +27,17 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "core",
       },
       {
+        key: "mode",
+        label: "Execution mode",
+        type: "select",
+        options: [
+          { label: "Gateway (perpetual)", value: "gateway" },
+          { label: "Job (one-shot)", value: "job" },
+        ],
+        default: "gateway",
+        hint: "Gateway runs Hermes as a long-lived pod; Job spawns a fresh pod per run.",
+      },
+      {
         key: "variant",
         label: "Variant",
         type: "text",
@@ -41,6 +52,47 @@ export function getConfigSchema(): AdapterConfigSchema {
         hint: "Inject runtime config with permission.external_directory=allow",
         group: "core",
       },
+      {
+        key: "bootstrapPromptTemplate",
+        label: "Bootstrap prompt",
+        type: "textarea",
+        hint: "In gateway mode, sent as ephemeral system prompt on every run. Only for new sessions in job mode.",
+        group: "core",
+      },
+      {
+        key: "extraArgs",
+        label: "Extra CLI args",
+        type: "textarea",
+        hint: "Additional args appended to hermes run command (job mode) or passed to gateway API (gateway mode)",
+        group: "core",
+      },
+
+      // Gateway
+      {
+        key: "gatewayStartupTimeoutSec",
+        label: "Gateway startup timeout (sec)",
+        type: "number",
+        default: 120,
+        hint: "Time to wait for gateway pod to become ready before giving up",
+        group: "gateway",
+      },
+      {
+        key: "gatewayApiServerPort",
+        label: "Gateway API port",
+        type: "number",
+        default: 8642,
+        hint: "Internal port for the gateway API server",
+        group: "gateway",
+      },
+      {
+        key: "gatewayMaxIterations",
+        label: "Gateway max iterations",
+        type: "number",
+        default: 90,
+        hint: "Max agent turns per run (HERMES_MAX_ITERATIONS)",
+        group: "gateway",
+      },
+
       // Kubernetes
       {
         key: "namespace",

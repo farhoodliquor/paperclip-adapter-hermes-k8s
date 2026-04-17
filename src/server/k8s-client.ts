@@ -74,6 +74,10 @@ export function getLogApi(kubeconfigPath?: string): k8s.Log {
   return new k8s.Log(getKubeConfig(kubeconfigPath));
 }
 
+export function getAppsApi(kubeconfigPath?: string): k8s.AppsV1Api {
+  return getKubeConfig(kubeconfigPath).makeApiClient(k8s.AppsV1Api);
+}
+
 /**
  * Read the current pod's namespace. Checks (in order):
  * 1. PAPERCLIP_NAMESPACE env var (set explicitly in Deployment)

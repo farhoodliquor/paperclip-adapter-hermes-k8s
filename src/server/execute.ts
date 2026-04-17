@@ -1,5 +1,5 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
-import { asString, asNumber, asBoolean, parseObject } from "@paperclipai/adapter-utils/server-utils";
+import { asString, asNumber, asBoolean, asStringArray, parseObject, buildPaperclipEnv, renderTemplate } from "@paperclipai/adapter-utils/server-utils";
 
 import type { AdapterBillingType } from "@paperclipai/adapter-utils";
 
@@ -19,14 +19,21 @@ function inferBillingType(biller: string): AdapterBillingType {
   if (biller === "bedrock" || biller === "vertex") return "metered_api";
   return "unknown";
 }
+
 import {
   parseHermesText,
   isHermesUnknownSessionError,
 } from "./parse.js";
 import { getSelfPodInfo, getBatchApi, getCoreApi, getLogApi } from "./k8s-client.js";
 import { buildJobManifest } from "./job-manifest.js";
+import { ensureGateway } from "./gateway-manager.js";
+import { executeGatewayRun, type StartRunOptions } from "./gateway-client.js";
 import type * as k8s from "@kubernetes/client-node";
 import { Writable } from "node:stream";
+
+// =============================================================================
+// Job-mode helpers (unchanged)
+// =============================================================================
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -52,10 +59,7 @@ async function waitForPod(
 
   let lastStatus = "";
   while (Date.now() < deadline) {
-    const podList = await coreApi.listNamespacedPod({
-      namespace,
-      labelSelector,
-    });
+    const podList = await coreApi.listNamespacedPod({ namespace, labelSelector });
     const pod = podList.items[0];
 
     if (!pod) {
@@ -156,10 +160,7 @@ async function streamPodLogs(
   });
 
   try {
-    await logApi.log(namespace, podName, "hermes", writable, {
-      follow: true,
-      pretty: false,
-    });
+    await logApi.log(namespace, podName, "hermes", writable, { follow: true, pretty: false });
   } catch {
     // follow may fail if the container already exited
   }
@@ -221,7 +222,6 @@ async function getPodExitCode(namespace: string, jobName: string, kubeconfigPath
   });
   const pod = podList.items[0];
   if (!pod) return null;
-
   const containerStatus = pod.status?.containerStatuses?.find((s) => s.name === "hermes");
   return containerStatus?.state?.terminated?.exitCode ?? null;
 }
@@ -245,7 +245,248 @@ async function cleanupJob(
   }
 }
 
-export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+// =============================================================================
+// Gateway-mode helpers
+// =============================================================================
+
+function joinPromptSections(sections: string[], separator = "\n\n"): string {
+  return sections.filter((s) => s.trim().length > 0).join(separator);
+}
+
+function stringifyPaperclipWakePayload(wake: unknown): string | null {
+  if (!wake || typeof wake !== "object") return null;
+  try {
+    const json = JSON.stringify(wake);
+    return json === "{}" ? null : json;
+  } catch {
+    return null;
+  }
+}
+
+function renderPaperclipWakePrompt(wake: unknown): string {
+  if (!wake || typeof wake !== "object") return "";
+  const w = wake as Record<string, unknown>;
+  const reason = typeof w.reason === "string" ? w.reason.trim() : "";
+  const comments = Array.isArray(w.comments) ? w.comments : [];
+  if (!reason && comments.length === 0) return "";
+  const parts: string[] = [];
+  if (reason) parts.push(`Wake reason: ${reason}`);
+  for (const c of comments) {
+    if (typeof c === "object" && c !== null) {
+      const comment = c as Record<string, unknown>;
+      const body = typeof comment.body === "string" ? comment.body.trim() : "";
+      if (body) parts.push(`Comment: ${body}`);
+    }
+  }
+  return parts.join("\n\n");
+}
+
+function buildGatewayPromptAndInstructions(
+  ctx: AdapterExecutionContext,
+): { prompt: string; instructions: string | undefined } {
+  const { agent, runId, runtime, context, config: rawConfig } = ctx;
+  const config = parseObject(rawConfig);
+
+  const promptTemplate = asString(
+    config.promptTemplate,
+    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+  );
+  const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
+  const runtimeSessionParams = parseObject(runtime.sessionParams);
+  const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
+
+  const templateData = {
+    agentId: agent.id,
+    companyId: agent.companyId,
+    runId,
+    company: { id: agent.companyId },
+    agent,
+    run: { id: runId, source: "on_demand" },
+    context,
+  };
+
+  // bootstrapPromptTemplate is sent as `instructions` on every run
+  const instructions = bootstrapPromptTemplate.trim().length > 0
+    ? renderTemplate(bootstrapPromptTemplate, { ...templateData, sessionId: runtimeSessionId }).trim()
+    : undefined;
+
+  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake);
+  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+
+  // When resuming with a wake prompt, don't also send the main template (avoid repetition)
+  const shouldUseResumeDeltaPrompt = Boolean(runtimeSessionId) && wakePrompt.length > 0;
+  const renderedPrompt = shouldUseResumeDeltaPrompt
+    ? ""
+    : renderTemplate(promptTemplate, { ...templateData, sessionId: runtimeSessionId });
+
+  const prompt = joinPromptSections([wakePrompt, sessionHandoffNote, renderedPrompt]);
+
+  return { prompt, instructions };
+}
+
+async function executeGateway(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const { agent, runId, runtime, config: rawConfig, onLog, onMeta } = ctx;
+  const config = parseObject(rawConfig);
+  const kubeconfigPath = asString(config.kubeconfig, "") || undefined;
+
+  const model = asString(config.model, "").trim();
+  const provider = asString(config.provider, "").trim();
+  const variant = asString(config.variant, "").trim();
+  const extraArgs = asStringArray(config.extraArgs);
+  const runtimeSessionParams = parseObject(runtime.sessionParams);
+  const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
+  const workspaceContext = parseObject(ctx.context.paperclipWorkspace);
+  const workspaceId = asString(workspaceContext.workspaceId, "") || null;
+  const workspaceRepoUrl = asString(workspaceContext.repoUrl, "") || null;
+  const workspaceRepoRef = asString(workspaceContext.repoRef, "") || null;
+  const cwd = asString(workspaceContext.cwd, "");
+
+  // Ensure the gateway is running
+  await onLog("stdout", `[paperclip] Ensuring Hermes gateway is running for agent ${agent.id}...\n`);
+  const endpoint = await ensureGateway(ctx, kubeconfigPath);
+  await onLog("stdout", `[paperclip] Gateway ready at ${endpoint.baseUrl}\n`);
+
+  const { prompt, instructions } = buildGatewayPromptAndInstructions(ctx);
+
+  if (onMeta) {
+    await onMeta({
+      adapterType: "hermes_k8s",
+      command: `hermes gateway (API: ${endpoint.baseUrl})`,
+      cwd: endpoint.namespace,
+      commandArgs: [],
+      commandNotes: [
+        `Gateway: ${endpoint.deploymentName}`,
+        `Session: ${runtimeSessionId || "(new)"}`,
+        `Model: ${model || "default"}`,
+        `Bootstrap: ${instructions ? `${instructions.length} chars` : "none"}`,
+      ],
+      prompt,
+      context: ctx.context,
+    } as Parameters<typeof onMeta>[0]);
+  }
+
+  // Build start-run options
+  const runOpts: StartRunOptions = {
+    prompt,
+    instructions,
+    model: model || undefined,
+    provider: provider || undefined,
+    variant: variant || undefined,
+    sessionId: runtimeSessionId || undefined,
+    extraArgs: extraArgs.length > 0 ? extraArgs : undefined,
+  };
+
+  // Timeout: use timeoutSec as the overall run deadline
+  const timeoutSec = asNumber(config.timeoutSec, 0);
+  const controller = new AbortController();
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  if (timeoutSec > 0) {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutSec * 1000);
+  }
+
+  let runResult: { runId: string; output: string; usage?: { input_tokens: number; output_tokens: number; total_tokens: number }; error?: string };
+
+  try {
+    runResult = await executeGatewayRun(endpoint, runOpts, controller.signal);
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        exitCode: null,
+        signal: null,
+        timedOut: true,
+        errorMessage: `Timed out after ${timeoutSec}s`,
+        errorCode: "timeout",
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    await onLog("stderr", `[paperclip] Gateway run failed: ${msg}\n`);
+    return {
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      errorMessage: `Gateway run failed: ${msg}`,
+      errorCode: "gateway_run_failed",
+    };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+
+  const { output, usage, error } = runResult;
+
+  // Log raw output to onLog for transcript
+  if (output) {
+    for (const line of output.split(/\r?\n/)) {
+      if (line.trim()) await onLog("stdout", `${line}\n`);
+    }
+  }
+
+  // Build session params
+  const resolvedSessionId = runtimeSessionId || null;
+  const resolvedSessionParams = resolvedSessionId
+    ? {
+        sessionId: resolvedSessionId,
+        ...(cwd ? { cwd } : {}),
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
+        ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
+      } as Record<string, unknown>
+    : null;
+
+  const billerEnv: Record<string, string> = {};
+  for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]) {
+    const val = process.env[key];
+    if (val) billerEnv[key] = val;
+  }
+  const biller = (inferBillerFromEnv(billerEnv, null) ?? provider) || null;
+
+  if (timedOut) {
+    return {
+      exitCode: null,
+      signal: null,
+      timedOut: true,
+      errorMessage: `Timed out after ${timeoutSec}s`,
+      errorCode: "timeout",
+      sessionId: resolvedSessionId,
+      sessionParams: resolvedSessionParams,
+      sessionDisplayId: resolvedSessionId,
+      provider: provider || null,
+      model: model || null,
+      billingType: inferBillingType(biller ?? "unknown"),
+      costUsd: undefined,
+      resultJson: { output },
+    };
+  }
+
+  const exitCode = error ? 1 : 0;
+
+  return {
+    exitCode,
+    signal: null,
+    timedOut: false,
+    errorMessage: error || null,
+    sessionId: resolvedSessionId,
+    sessionParams: resolvedSessionParams,
+    sessionDisplayId: resolvedSessionId,
+    provider: provider || null,
+    model: model || null,
+    billingType: inferBillingType(biller ?? "unknown"),
+    costUsd: undefined,
+    resultJson: { output, usage },
+    summary: output || null,
+    clearSession: false,
+  } as AdapterExecutionResult;
+}
+
+// =============================================================================
+// Job-mode execute (unchanged from original, extracted for clarity)
+// =============================================================================
+
+async function executeJob(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, runtime, config: rawConfig, onLog, onMeta } = ctx;
   const config = parseObject(rawConfig);
   const timeoutSec = asNumber(config.timeoutSec, 0);
@@ -279,13 +520,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
   } catch {
-    // If we can't check, proceed — heartbeat service enforces concurrency too
+    // If we can't check, proceed
   }
 
-  const { job, jobName, namespace, prompt, hermesArgs, promptMetrics } = buildJobManifest({
-    ctx,
-    selfPod,
-  });
+  const { job, jobName, namespace, prompt, hermesArgs, promptMetrics } = buildJobManifest({ ctx, selfPod });
 
   if (onMeta) {
     await onMeta({
@@ -387,7 +625,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   }
 
-  // Parse Hermes quiet-mode text output
   const parsed = parseHermesText(stdout);
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
@@ -410,7 +647,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     : null;
 
   const provider = parseModelProvider(model) ?? (asString(config.provider, "").trim() || null);
-  // Build a minimal env record for biller inference
   const billerEnv: Record<string, string> = {};
   for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"]) {
     const val = process.env[key];
@@ -424,7 +660,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const synthesizedExitCode = parsedError && (rawExitCode ?? 0) === 0 ? 1 : rawExitCode;
   const failed = (synthesizedExitCode ?? 0) !== 0;
 
-  // If the session was stale, clear it so the next heartbeat starts fresh
   if (failed && isHermesUnknownSessionError(stdout)) {
     await onLog("stdout", `[paperclip] Hermes session is unavailable; clearing for next run.\n`);
     return {
@@ -458,4 +693,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     summary: parsed.summary || null,
     clearSession: false,
   } as AdapterExecutionResult;
+}
+
+// =============================================================================
+// Main execute entry point — routes to gateway or job mode
+// =============================================================================
+
+export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const config = parseObject(ctx.config);
+  const mode = asString(config.mode, "gateway");
+
+  if (mode === "job") {
+    return executeJob(ctx);
+  }
+
+  return executeGateway(ctx);
 }

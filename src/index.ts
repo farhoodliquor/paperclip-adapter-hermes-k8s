@@ -31,36 +31,64 @@ export const agentConfigurationDoc = `# hermes_k8s agent configuration
 
 Adapter: hermes_k8s
 
-Runs Hermes inside an isolated Kubernetes Job pod instead of the main
-Paperclip process. The Job inherits the container image, imagePullSecrets,
-DNS config, and PVC from the running Paperclip Deployment automatically.
+Runs Hermes inside an isolated Kubernetes pod instead of the main
+Paperclip process. Two execution modes are available.
+
+## Execution Modes
+
+### mode: "gateway" (default) — Perpetual
+
+Runs Hermes as a long-lived Kubernetes Deployment with an embedded API server
+(port 8642). Paperclip sends work via the Hermes API (POST /v1/runs) on each
+heartbeat. Sessions persist across heartbeats. The gateway never restarts on its
+own — Paperclip kills it only when the agent is stopped.
+
+Benefits:
+- No pod startup latency on each run
+- Sessions stay alive between heartbeats
+- Bootstrap prompts injected on every run via the \`instructions\` field
+- Shared PVC session state persists
+
+### mode: "job" — One-shot (legacy)
+
+Spawns a fresh Kubernetes Job per execute() call. Identical to the original
+behavior. Use this for testing or when you need complete isolation between runs.
+
+## Core Fields
 
 Adapter-specific core fields (model, promptTemplate, extraArgs, env,
 timeoutSec, and graceSec are provided by the platform):
 - provider (string, optional): AI provider (anthropic, openai, google, etc.); auto-detected from model if not specified
-- variant (string, optional): provider-specific reasoning/profile variant passed as --variant
+- variant (string, optional): provider-specific reasoning/profile variant
+- mode (string, optional): "gateway" (default) or "job"
+- bootstrapPromptTemplate (string, optional): ephemeral system prompt injected on every run in gateway mode (sent as Hermes \`instructions\`); in job mode, only used when no existing session
 - dangerouslySkipPermissions (boolean, optional): inject runtime config with permission.external_directory=allow; defaults to true
-- bootstrapPromptTemplate (string, optional): first-run prompt template (only used when no existing session)
 
-Kubernetes fields:
-- namespace (string, optional): namespace for Jobs; defaults to the Deployment namespace
+## Gateway Fields (mode: "gateway")
+
+- gatewayStartupTimeoutSec (number, optional): time for gateway pod to become ready; default 120s
+- gatewayApiServerPort (number, optional): internal port for the gateway API server; default 8642
+- gatewayMaxIterations (number, optional): max agent turns per run (HERMES_MAX_ITERATIONS); default 90
+
+## Kubernetes Fields
+
+- namespace (string, optional): namespace for gateway/Job; defaults to the Deployment namespace
 - image (string, optional): override container image; defaults to the running Deployment image
 - imagePullPolicy (string, optional): image pull policy; default "IfNotPresent"
-- serviceAccountName (string, optional): K8s service account for Job pods; defaults to namespace default
+- serviceAccountName (string, optional): K8s service account; defaults to namespace default
 - kubeconfig (string, optional): absolute path to a kubeconfig file on disk; defaults to in-cluster service account auth
 - cwd (string, optional): override working directory inside the container; defaults to /paperclip
-- resources.requests.cpu (string, optional): CPU request (e.g. 500m, 1)
-- resources.requests.memory (string, optional): memory request (e.g. 512Mi, 1Gi)
-- resources.limits.cpu (string, optional): CPU limit (e.g. 2, 4)
-- resources.limits.memory (string, optional): memory limit (e.g. 2Gi, 4Gi)
-- nodeSelector (object, optional): node selector for Job pods
-- tolerations (array, optional): tolerations for Job pods
-- labels (object, optional): extra labels added to Job metadata
-- ttlSecondsAfterFinished (number, optional): auto-cleanup delay; default 300
-- retainJobs (boolean, optional): skip cleanup on completion for debugging
+- resources (object, optional): { requests: { cpu, memory }, limits: { cpu, memory } }
+- nodeSelector (object, optional): node selector for gateway/Job pods
+- tolerations (array, optional): tolerations for gateway/Job pods
+- labels (object, optional): extra labels added to gateway/Job metadata
 
-Platform-provided fields (do not duplicate in adapter config):
-- model, promptTemplate, extraArgs, env, timeoutSec, graceSec
+## Operational Fields
+
+- timeoutSec (number, optional): run timeout in seconds; 0 means no timeout
+- graceSec (number, optional): additional grace before adapter gives up after deadline
+- ttlSecondsAfterFinished (number, optional): auto-cleanup delay (job mode only); default 300
+- retainJobs (boolean, optional): skip cleanup on completion for debugging (job mode only)
 
 Inherited from Deployment (no config needed):
 - ANTHROPIC_API_KEY, OPENAI_API_KEY, and other provider keys
@@ -69,9 +97,9 @@ Inherited from Deployment (no config needed):
 - Container image, imagePullSecrets, DNS config, PVC mount, security context
 
 Notes:
-- Session resume works via the shared /paperclip PVC (HOME=/paperclip)
+- Session resume in gateway mode: same Hermes session persists across heartbeats via session_id
+- Session resume in job mode: works via the shared /paperclip PVC (HOME=/paperclip)
 - Skills are bundled in the container image
-- Prompts are delivered via a busybox init container writing to an emptyDir volume
 - Hermes is a multi-provider AI agent that can work with various model backends
 `;
 

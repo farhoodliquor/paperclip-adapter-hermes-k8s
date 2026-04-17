@@ -1,7 +1,7 @@
 {
   "name": "@farhoodliquor/paperclip-adapter-hermes-k8s",
   "version": "0.4.0",
-  "description": "Paperclip adapter plugin that runs Hermes agents as Kubernetes Jobs",
+  "description": "Paperclip adapter plugin that runs Hermes agents as Kubernetes Jobs or as perpetual gateway deployments",
   "license": "MIT",
   "type": "module",
   "repository": {
