@@ -75,10 +75,9 @@ function buildGatewayEnvVars(
   }
 
   // Gateway-specific env vars
-  merged.HERMES_API_SERVER_HOST = "0.0.0.0";
-  merged.HERMES_API_SERVER_PORT = String(asNumber(config.gatewayApiServerPort, 8642));
+  merged.API_SERVER_HOST = "0.0.0.0";
+  merged.API_SERVER_PORT = String(asNumber(config.gatewayApiServerPort, 8642));
   if (apiKey) merged.API_SERVER_KEY = apiKey;
-  merged.HERMES_DISABLE_PROJECT_CONFIG = "true";
   merged.HOME = "/opt/data";
   merged.HERMES_HOME = "/opt/data";
 
@@ -134,6 +133,9 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
       name: "data",
       persistentVolumeClaim: { claimName: selfPod.pvcClaimName },
     });
+  } else {
+    // Fallback emptyDir for ephemeral storage
+    volumes.push({ name: "data", emptyDir: {} });
   }
 
   // Mount secret volumes inherited from the Deployment pod
@@ -145,9 +147,8 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
   }
 
   const volumeMounts: k8s.V1VolumeMount[] = [];
-  if (selfPod.pvcClaimName) {
-    volumeMounts.push({ name: "data", mountPath: "/opt/data" });
-  }
+  // Always mount /opt/data — PVC if available, emptyDir fallback otherwise
+  volumeMounts.push({ name: "data", mountPath: "/opt/data" });
   for (const sv of selfPod.secretVolumes) {
     volumeMounts.push({ name: sv.volumeName, mountPath: sv.mountPath, readOnly: true });
   }
@@ -210,7 +211,7 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
               name: "hermes-gateway",
               image,
               imagePullPolicy,
-              command: ["/opt/hermes/.venv/bin/hermes", "gateway", "run"],
+              command: ["/opt/hermes/docker/entrypoint.sh", "gateway", "run"],
               ports: [{ containerPort: port, name: "api" }],
               env: envVars,
               volumeMounts,
