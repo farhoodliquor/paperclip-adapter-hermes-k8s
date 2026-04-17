@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
 import { asNumber, parseObject } from "@paperclipai/adapter-utils/server-utils";
 import { getAppsApi, getCoreApi, getSelfPodInfo } from "./k8s-client.js";
@@ -9,7 +8,7 @@ export interface GatewayEndpoint {
   serviceName: string;
   namespace: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey?: string;
 }
 
 /**
@@ -18,20 +17,16 @@ export interface GatewayEndpoint {
  */
 const gatewayCache = new Map<string, GatewayEndpoint>();
 
-function generateApiKey(): string {
-  return randomBytes(24).toString("hex");
-}
-
 function sanitizeForK8sName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 8);
 }
 
-async function checkGatewayHealth(baseUrl: string, apiKey: string): Promise<boolean> {
+async function checkGatewayHealth(baseUrl: string, apiKey?: string): Promise<boolean> {
   try {
+    const headers: Record<string, string> = {};
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
     const res = await fetch(`${baseUrl}/health`, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       signal: AbortSignal.timeout(5000),
     });
     return res.ok;
@@ -42,7 +37,7 @@ async function checkGatewayHealth(baseUrl: string, apiKey: string): Promise<bool
 
 async function waitForGatewayHealth(
   baseUrl: string,
-  apiKey: string,
+  apiKey: string | undefined,
   timeoutMs: number,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -125,8 +120,11 @@ export async function ensureGateway(
   // Introspect self-pod to inherit image, PVC, env vars, etc.
   const selfPod = await getSelfPodInfo(kubeconfigPath);
 
-  // Generate a new API key for this gateway
-  const apiKey = generateApiKey();
+  // API key is optional — read from config.env.API_SERVER_KEY if provided
+  const envConfig = parseObject(config.env);
+  const apiKey = typeof envConfig.API_SERVER_KEY === "string" && envConfig.API_SERVER_KEY.trim()
+    ? envConfig.API_SERVER_KEY.trim()
+    : undefined;
 
   const { deployment, service, deploymentName, serviceName, namespace } = buildGatewayManifest({
     ctx,

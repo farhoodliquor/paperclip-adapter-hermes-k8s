@@ -71,12 +71,11 @@ export async function startRun(
   signal?: AbortSignal,
 ): Promise<StartRunResult> {
   const body = buildPostBody(opts);
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
   const res = await fetch(`${endpoint.baseUrl}/v1/runs`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${endpoint.apiKey}`,
-    },
+    headers,
     body: JSON.stringify(body),
     signal,
   });
@@ -104,9 +103,8 @@ export async function streamRunEvents(
   signal?: AbortSignal,
 ): Promise<void> {
   const url = `${endpoint.baseUrl}/v1/runs/${encodeURIComponent(runId)}/events`;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${endpoint.apiKey}`,
-  };
+  const headers: Record<string, string> = {};
+  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
   if (sessionId) {
     headers["X-Hermes-Session-Id"] = sessionId;
   }
@@ -163,9 +161,11 @@ export async function cancelRun(
   runId: string,
   signal?: AbortSignal,
 ): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (endpoint.apiKey) headers["Authorization"] = `Bearer ${endpoint.apiKey}`;
   await fetch(`${endpoint.baseUrl}/v1/runs/${encodeURIComponent(runId)}`, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${endpoint.apiKey}` },
+    headers,
     signal,
   });
 }

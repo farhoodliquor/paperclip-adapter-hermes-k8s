@@ -16,7 +16,7 @@ function sanitizeForK8sName(value: string): string {
 export interface GatewayBuildInput {
   ctx: AdapterExecutionContext;
   selfPod: SelfPodInfo;
-  apiKey: string;
+  apiKey?: string;
 }
 
 export interface GatewayBuildResult {
@@ -31,7 +31,7 @@ function buildGatewayEnvVars(
   ctx: AdapterExecutionContext,
   selfPod: SelfPodInfo,
   config: Record<string, unknown>,
-  apiKey: string,
+  apiKey?: string,
 ): k8s.V1EnvVar[] {
   const { agent, context } = ctx;
   const envConfig = parseObject(config.env);
@@ -77,7 +77,7 @@ function buildGatewayEnvVars(
   // Gateway-specific env vars
   merged.HERMES_API_SERVER_HOST = "0.0.0.0";
   merged.HERMES_API_SERVER_PORT = String(asNumber(config.gatewayApiServerPort, 8642));
-  merged.HERMES_API_SERVER_KEY = apiKey;
+  if (apiKey) merged.API_SERVER_KEY = apiKey;
   merged.HERMES_DISABLE_PROJECT_CONFIG = "true";
   merged.HOME = "/paperclip";
 
