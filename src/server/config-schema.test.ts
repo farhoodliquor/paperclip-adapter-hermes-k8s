@@ -133,9 +133,9 @@ describe("getConfigSchema", () => {
     expect(keys).toContain("bootstrapPromptTemplate");
   });
 
-  it("does not surface serviceAccountName in the UI schema", () => {
+  it("surfaces serviceAccountName in the UI schema", () => {
     const keys = schema.fields.map((f) => f.key);
-    expect(keys).not.toContain("serviceAccountName");
+    expect(keys).toContain("serviceAccountName");
   });
 
   it("includes cwd as text", () => {

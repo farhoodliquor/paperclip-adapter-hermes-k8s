@@ -94,6 +94,13 @@ export function getConfigSchema(): AdapterConfigSchema {
         group: "kubernetes",
       },
       {
+        key: "serviceAccountName",
+        label: "Service account",
+        type: "text",
+        hint: "K8s service account; defaults to namespace default",
+        group: "kubernetes",
+      },
+      {
         key: "image",
         label: "Container image",
         type: "text",
