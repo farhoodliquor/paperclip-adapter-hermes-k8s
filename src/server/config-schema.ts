@@ -36,6 +36,7 @@ export function getConfigSchema(): AdapterConfigSchema {
         ],
         default: "gateway",
         hint: "Gateway runs Hermes as a long-lived pod; Job spawns a fresh pod per run.",
+        group: "core",
       },
       {
         key: "variant",
@@ -59,14 +60,6 @@ export function getConfigSchema(): AdapterConfigSchema {
         hint: "In gateway mode, sent as ephemeral system prompt on every run. Only for new sessions in job mode.",
         group: "core",
       },
-      {
-        key: "extraArgs",
-        label: "Extra CLI args",
-        type: "textarea",
-        hint: "Additional args appended to hermes run command (job mode) or passed to gateway API (gateway mode)",
-        group: "core",
-      },
-
       // Gateway
       {
         key: "gatewayStartupTimeoutSec",

@@ -63,12 +63,11 @@ describe("index", () => {
     });
 
     it("lists platform-provided fields that should not be duplicated", () => {
-      expect(agentConfigurationDoc).toContain("model, promptTemplate, extraArgs, env, timeoutSec, graceSec");
+      expect(agentConfigurationDoc).toContain("model, promptTemplate, extraArgs, env, timeoutSec, and graceSec");
     });
 
     it("documents itemized resource fields", () => {
-      expect(agentConfigurationDoc).toContain("resources.requests.cpu");
-      expect(agentConfigurationDoc).toContain("resources.limits.memory");
+      expect(agentConfigurationDoc).toContain("requests: { cpu, memory }, limits: { cpu, memory }");
     });
   });
 });

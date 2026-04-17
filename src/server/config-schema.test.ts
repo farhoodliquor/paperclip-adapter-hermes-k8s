@@ -122,15 +122,15 @@ describe("getConfigSchema", () => {
   });
 
   it("every field has a group", () => {
-    const validGroups = ["core", "kubernetes"];
+    const validGroups = ["core", "gateway", "kubernetes"];
     for (const field of schema.fields) {
       expect(validGroups).toContain(field.group);
     }
   });
 
-  it("does not surface bootstrapPromptTemplate in the UI schema", () => {
+  it("surfaces bootstrapPromptTemplate in the UI schema", () => {
     const keys = schema.fields.map((f) => f.key);
-    expect(keys).not.toContain("bootstrapPromptTemplate");
+    expect(keys).toContain("bootstrapPromptTemplate");
   });
 
   it("does not surface serviceAccountName in the UI schema", () => {

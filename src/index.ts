@@ -56,8 +56,7 @@ behavior. Use this for testing or when you need complete isolation between runs.
 
 ## Core Fields
 
-Adapter-specific core fields (model, promptTemplate, extraArgs, env,
-timeoutSec, and graceSec are provided by the platform):
+Adapter-specific core fields (model, promptTemplate, extraArgs, env, timeoutSec, and graceSec are provided by the platform):
 - provider (string, optional): AI provider (anthropic, openai, google, etc.); auto-detected from model if not specified
 - variant (string, optional): provider-specific reasoning/profile variant
 - mode (string, optional): "gateway" (default) or "job"
