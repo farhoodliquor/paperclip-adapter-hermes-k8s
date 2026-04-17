@@ -79,7 +79,8 @@ function buildGatewayEnvVars(
   merged.HERMES_API_SERVER_PORT = String(asNumber(config.gatewayApiServerPort, 8642));
   if (apiKey) merged.API_SERVER_KEY = apiKey;
   merged.HERMES_DISABLE_PROJECT_CONFIG = "true";
-  merged.HOME = "/paperclip";
+  merged.HOME = "/opt/data";
+  merged.HERMES_HOME = "/opt/data";
 
   // Hermes max iterations (per-run turn limit)
   const maxIterations = asNumber(config.gatewayMaxIterations, 90);
@@ -100,7 +101,7 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
   const config = parseObject(rawConfig);
 
   const namespace = asString(config.namespace, "") || selfPod.namespace;
-  const image = asString(config.image, "") || selfPod.image;
+  const image = asString(config.image, "") || "nousresearch/hermes-agent:latest";
   const port = asNumber(config.gatewayApiServerPort, 8642);
   const resources = parseObject(config.resources);
   const nodeSelector = parseObject(config.nodeSelector);
@@ -145,7 +146,7 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
 
   const volumeMounts: k8s.V1VolumeMount[] = [];
   if (selfPod.pvcClaimName) {
-    volumeMounts.push({ name: "data", mountPath: "/paperclip" });
+    volumeMounts.push({ name: "data", mountPath: "/opt/data" });
   }
   for (const sv of selfPod.secretVolumes) {
     volumeMounts.push({ name: sv.volumeName, mountPath: sv.mountPath, readOnly: true });
@@ -154,14 +155,10 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
   const securityContext: k8s.V1SecurityContext = {
     capabilities: { drop: ["ALL"] },
     readOnlyRootFilesystem: false,
-    runAsNonRoot: true,
-    runAsUser: 1000,
     allowPrivilegeEscalation: false,
   };
 
   const podSecurityContext: k8s.V1PodSecurityContext = {
-    runAsNonRoot: true,
-    runAsUser: 1000,
     runAsGroup: 1000,
     fsGroup: 1000,
     fsGroupChangePolicy: "OnRootMismatch",
@@ -213,7 +210,7 @@ export function buildGatewayManifest(input: GatewayBuildInput): GatewayBuildResu
               name: "hermes-gateway",
               image,
               imagePullPolicy,
-              command: ["hermes", "gateway", "run"],
+              command: ["/opt/hermes/.venv/bin/hermes", "gateway", "run"],
               ports: [{ containerPort: port, name: "api" }],
               env: envVars,
               volumeMounts,
